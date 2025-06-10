@@ -55,7 +55,7 @@ userSchema.pre("save", async function (next){
     if(!this.isModified("password")){ //This is because we want it to be only activate when password is modified and saved, and not in case of something else. 
         return next();
     }
-    this.password = bcrypt.hash(this.password, 10);
+    this.password = await bcrypt.hash(this.password, 10);
     next();
 })
 
@@ -85,6 +85,7 @@ userSchema.methods.generateRefreshToken = function(){
     jwt.sign(
         {//Payload -- Data
             _id: this._id,
+
         },
         //secretOrPrivateKey
         process.env.ACCESS_TOKEN_SECRET,
