@@ -4,7 +4,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-
 // Configuration
 cloudinary.config({ 
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME, 
@@ -27,7 +26,9 @@ const uploadOnCloudinary = async (localFilePath) => {
                 console.log(error);
             });
         
-            console.log("file is uploaded on cloudinary", uploadResult.url);
+            // console.log("file is uploaded on cloudinary", uploadResult.url);
+            //If file is uploaded till this step, we need to remove it from our local storage which we can do by unlinking it
+            fs.unlinkSync(localFilePath);
             return uploadResult;
         }
     } catch (error) {
