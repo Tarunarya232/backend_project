@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { loginUser, logoutUser, registerUser } from "../controllers/user.controller.js";
+import { loginUser, logoutUser, refreshAccessToken, registerUser } from "../controllers/user.controller.js";
 import {upload} from "../middlewares/multer.middleware.js";
 import { verifyJWT } from "../middlewares/auth.middleware.js";
 
@@ -24,5 +24,7 @@ userRouter.route("/login").post(
 
 //Secured Routes -- Routes which have acccess only after we login
 userRouter.route("/logout").post(verifyJWT, logoutUser);//Now, we will have access to user object as we have added it to our request object
+
+userRouter.route("/refresh-token").post(refreshAccessToken);
 
 export default userRouter;
