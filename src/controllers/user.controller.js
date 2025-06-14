@@ -1,4 +1,4 @@
-    //Steps to follow to register a user:
+//Steps to follow to register a user:
     //Get User Details from frontend or Postman
     //Validate the data in the backend, e.g., check if it's non-empty
     //Check if user already exists by using fields such as username and email
@@ -15,6 +15,7 @@ import { User } from "../models/user.model.js";
 import { uploadOnCloudinary, deleteFileFromCloudinary } from "../utils/cloudinary.js";
 import { ApiResponse } from "../utils/apiResponse.js";
 import jwt from "jsonwebtoken";
+import mongoose from "mongoose";
 
 const generateAccessAndRefreshToken = async (userId) => {
     try {
@@ -322,4 +323,150 @@ const updateCoverImage = asyncHandler(async (req, res) => {
     return res.status(200).json(new ApiResponse(200, user, "User cover image updated successfully"));
 });
 
-export { registerUser, loginUser, logoutUser, refreshAccessToken, changeUserPassword, getCurrentUser, updateAccountDetails, generateAccessAndRefreshToken, updateUserAvatar, updateCoverImage };
+const getUserChannelProfile = asyncHandler(async (req, res) => {
+    //whenever we want a profile of the channel, we go to the url of the channel, which we get through req.params.
+    const {username} = req.params;
+
+    //Check if the username is provided
+    if (!username) {
+        throw new ApiError(400, "Username is missing");
+    }
+
+    const channel = await User.aggregate([
+        {
+            $match: {
+                username: username.toLowerCase()// We are matching the username in the database with the username provided in the request params. Now, we will get the channel with the given username.
+            }, //Now, finding the subscriber count for the channel.
+        },
+        {
+            $lookup: {// This is used to join the user collection with the subscriptions collection to get the subscriber count.
+                from:"subscriptions", //This is the name of the collection we are looking up.
+                localField: "_id", //This is the field in the user collection that we are matching with the foreign field.
+                foreignField: "channel", //This is the field in the subscriptions collection that we are matching with the local field.
+                as: "subscribers", //This is the name of the field that will be added to the user document.
+
+
+            }
+
+        },
+        {
+            $lookup:{// This is used to join the user collection with the subscriptions collection to get the list of subscriptions for the user.
+                //This will give us the list of subscriptions for the user.
+                from:"subscriptions",
+                localField: "_id",
+                foreignField: "subscriber",
+                as: "subscribedTo" //This will give us the list of subscriptions for the user.
+            }
+        },
+        {
+            $addFields:{// This is used to add a new field to the user document.
+                subscribersCount:{
+                    $size: "$subscribers" //This will give us the count of subscribers for the channel.
+                },
+                channelsSubscribedToCount:{
+                    $size: "$subscribedTo" //This will give us the count of channels subscribed to by the user.
+                },
+                isSubscribed:{// This is used to check if the user is subscribed to the channel or not.
+                    //This will return true if the user is subscribed to the channel, otherwise false.
+                    //We are using $cond operator to check if the user is subscribed to the channel or not.
+                    //We are using $in operator to check if the user is subscribed to the channel or not.
+                    //We are using req.user?._id to get the user id of the user who is currently logged in.
+                    //If the user is subscribed to the channel, then it will return true, otherwise false.
+                    //This will be used to check if the user is subscribed to the channel or not.   
+                    $cond:{
+                        if: {$in: [req.user?._id, "$subscribers"]}, //This checks if the user is subscribed to the channel.
+                        then: true, //If the user is subscribed to the channel, then it will return true.
+                        else: false //If the user is not subscribed to the channel, then it will return false.
+                    }
+                }
+            }
+        },
+        {
+            $project:{
+                // This allows us to define projections, specifying the fields we want to include or exclude in the response. 
+                // It ensures that only the necessary data is returned to the user, hiding sensitive or irrelevant information.
+                fullName: 1, // Include fullName in the response
+                username: 1, // Include username in the response
+                avatar: 1, // Include avatar in the response
+                coverImage: 1, // Include coverImage in the response
+                subscribersCount: 1, // Include subscribersCount in the response
+                channelsSubscribedToCount: 1, // Include channelsSubscribedToCount in the response
+                isSubscribed: 1, // Include isSubscribed in the response
+                email:1 // Include email in the response
+            }
+        }
+    
+    ]);// This will give us the channel profile with the subscriber count and the list of subscriptions for the user. The data will be in the form of an array, so we will get the first element of the array to get the channel profile.
+    if (channel?.length === 0) {
+        throw new ApiError(404, "Channel not found");
+    }
+    return res.status(200).json(new ApiResponse(200, channel[0], "Channel profile fetched successfully"));
+});
+
+const getUserWatchHistory = asyncHandler(async (req, res) => {
+    const userId = req.user?._id;
+    if (!userId) {
+        throw new ApiError(400, "User ID is missing");
+    }
+
+    const watchHistory = await User.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(userId)
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                let: { watchHistoryIds: "$watchHistory" }, // expose user's watchHistory array
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $in: ["$_id", "$$watchHistoryIds"]
+                            }
+                        }
+                    },
+                    {
+                        $lookup: {
+                            from: "users",
+                            localField: "owner",
+                            foreignField: "_id",
+                            as: "ownerDetails",
+                            pipeline: [
+                                {
+                                    $project: {
+                                        fullName: 1,
+                                        username: 1,
+                                        avatar: 1
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        $addFields: {
+                            owner: { $first: "$ownerDetails" }
+                        }
+                    },
+                    {
+                        $project: {
+                            ownerDetails: 0 // remove unnecessary nested array
+                        }
+                    }
+                ],
+                as: "watchHistoryVideos"
+            }
+        }
+    ]);
+
+    return res.status(200).json(
+        new ApiResponse(
+            200,
+            watchHistory[0]?.watchHistoryVideos || [],
+            "User watch history fetched successfully"
+        )
+    );
+});
+
+export { registerUser, loginUser, logoutUser, refreshAccessToken, changeUserPassword, getCurrentUser, updateAccountDetails, generateAccessAndRefreshToken, updateUserAvatar, updateCoverImage, getUserChannelProfile, getUserWatchHistory };
